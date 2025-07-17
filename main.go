@@ -1,11 +1,15 @@
 package main
 
 import (
+	_ "embed"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 )
+
+//go:embed Makefile
+var embeddedMakefile []byte
 
 func main() {
 	if len(os.Args) < 3 {
@@ -17,16 +21,21 @@ func main() {
 
 	reportFile := "deps-report.md"
 
-	// Find the path to the Makefile in the CLI tool's working directory
-	cwd, err := os.Getwd()
+	// Write embedded Makefile to a temporary file
+	tmpMakefile, err := os.CreateTemp("", "go-dep-report-makefile-*.mk")
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error getting working directory: %v\n", err)
+		fmt.Fprintf(os.Stderr, "Error creating temp Makefile: %v\n", err)
 		os.Exit(1)
 	}
-	cliMakefile := filepath.Join(cwd, "Makefile")
+	defer os.Remove(tmpMakefile.Name())
+	if _, err := tmpMakefile.Write(embeddedMakefile); err != nil {
+		fmt.Fprintf(os.Stderr, "Error writing to temp Makefile: %v\n", err)
+		os.Exit(1)
+	}
+	tmpMakefile.Close()
 
-	// Run `make -f <cliMakefile> deps-report` in the service directory
-	cmd := exec.Command("make", "-f", cliMakefile, "deps-report")
+	// Run `make -f <tmpMakefile> deps-report` in the service directory
+	cmd := exec.Command("make", "-f", tmpMakefile.Name(), "deps-report")
 	cmd.Dir = serviceDir
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
